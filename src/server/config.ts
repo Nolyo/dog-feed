@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import webpush from "web-push";
+import { loadEnvFile } from "./load-env.js";
+
+// Doit tourner avant toute lecture de process.env
+loadEnvFile();
+
 
 function num(name: string, fallback: number): number {
   const raw = process.env[name];

@@ -18,13 +18,14 @@ Durée de vie prévue : ~2 semaines de vacances.
 ```bash
 cd dog-feed
 cp .env.example .env
-# édite PIN, SESSION_SECRET, DISCORD_WEBHOOK_URL
+# édite PIN, SESSION_SECRET, DISCORD_WEBHOOK_URL, PORT (ex. 3005)
 npm install
 npm run generate-vapid   # optionnel si tu veux fixer les clés
-node scripts/generate-icons.mjs
 npm run build
-npm start
+npm start                # lit le fichier .env automatiquement
 ```
+
+Le serveur écoute sur `PORT` (défaut `3000`). Si le 3000 est pris : `PORT=3005` dans `.env`.
 
 Dev (API + hot reload frontend via proxy) :
 
