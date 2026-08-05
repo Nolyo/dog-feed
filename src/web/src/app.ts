@@ -122,6 +122,32 @@ function renderLogin(root: HTMLElement): void {
   });
 }
 
+const INSTALL_DISMISS_KEY = "dogfeed_install_dismissed";
+
+function pushSupported(): boolean {
+  return (
+    "Notification" in window &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window
+  );
+}
+
+async function getPushSubscription(): Promise<PushSubscription | null> {
+  if (!pushSupported()) return null;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    return await reg.pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+}
+
+async function isPushActive(): Promise<boolean> {
+  if (!pushSupported()) return false;
+  if (Notification.permission !== "granted") return false;
+  return (await getPushSubscription()) !== null;
+}
+
 function renderMain(root: HTMLElement, tab: "today" | "history"): void {
   root.innerHTML = `
     <div class="header-bar">
@@ -129,7 +155,13 @@ function renderMain(root: HTMLElement, tab: "today" | "history"): void {
         <h1>Dog Feed 🐶</h1>
         <p class="sub" id="date-line">Chargement…</p>
       </div>
-      <button type="button" class="logout" id="logout">Sortir</button>
+      <div class="header-actions">
+        <button type="button" class="icon-btn" id="settings-btn" aria-label="Réglages" title="Réglages">
+          ⚙️
+          <span class="dot off" id="push-dot" hidden></span>
+        </button>
+        <button type="button" class="logout" id="logout">Sortir</button>
+      </div>
     </div>
     <div id="banners"></div>
     <div class="tabs">
@@ -138,11 +170,16 @@ function renderMain(root: HTMLElement, tab: "today" | "history"): void {
     </div>
     <div id="content"></div>
     <div id="lightbox" class="lightbox hidden" role="dialog"></div>
+    <div id="settings-root"></div>
   `;
 
   root.querySelector("#logout")!.addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });
     renderLogin(root);
+  });
+
+  root.querySelector("#settings-btn")!.addEventListener("click", () => {
+    void openSettings(root);
   });
 
   root.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((btn) => {
@@ -155,88 +192,177 @@ function renderMain(root: HTMLElement, tab: "today" | "history"): void {
   const lightbox = root.querySelector<HTMLDivElement>("#lightbox")!;
   lightbox.addEventListener("click", () => lightbox.classList.add("hidden"));
 
-  setupBanners(root.querySelector("#banners")!);
+  setupInstallBanner(root.querySelector("#banners")!);
+  void refreshPushDot(root);
 
   if (tab === "today") void loadToday(root);
   else void loadHistory(root);
+}
+
+async function refreshPushDot(root: HTMLElement): Promise<void> {
+  const dot = root.querySelector<HTMLSpanElement>("#push-dot");
+  if (!dot) return;
+  if (!pushSupported()) {
+    dot.hidden = true;
+    return;
+  }
+  const active = await isPushActive();
+  dot.hidden = false;
+  dot.classList.toggle("off", !active);
+  dot.title = active ? "Notifications activées" : "Notifications désactivées";
+}
+
+function setupInstallBanner(el: HTMLElement): void {
+  const dismissed = localStorage.getItem(INSTALL_DISMISS_KEY) === "1";
+  if (!(isIos() && !isStandalone()) || dismissed) {
+    el.innerHTML = "";
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="banner" id="install-banner">
+      <div class="banner-body">
+        <strong>iPhone : écran d’accueil</strong>
+        Partager → « Sur l’écran d’accueil » pour les notifs (iOS 16.4+).
+      </div>
+      <button type="button" class="banner-dismiss" id="dismiss-install" aria-label="Fermer">×</button>
+    </div>
+  `;
+
+  el.querySelector("#dismiss-install")?.addEventListener("click", () => {
+    localStorage.setItem(INSTALL_DISMISS_KEY, "1");
+    el.innerHTML = "";
+  });
+}
+
+async function openSettings(root: HTMLElement): Promise<void> {
+  const host = root.querySelector("#settings-root");
+  if (!host) return;
+
+  const active = await isPushActive();
+  const supported = pushSupported();
+  let statusText: string;
+  if (!supported) {
+    statusText = "Non supporté sur cet appareil / navigateur.";
+  } else if (Notification.permission === "denied") {
+    statusText = "Bloquées dans les réglages du téléphone.";
+  } else if (active) {
+    statusText = "Tu reçois les rappels repas.";
+  } else {
+    statusText = "Désactivées — pas de rappel push.";
+  }
+
+  host.innerHTML = `
+    <div class="settings-sheet" id="settings-sheet" role="dialog" aria-modal="true" aria-label="Réglages">
+      <div class="settings-panel">
+        <h2>Réglages</h2>
+        <p class="muted" style="margin:0 0 4px">Notifications & options</p>
+        <div class="settings-row">
+          <div>
+            <div class="label">Notifications repas</div>
+            <div class="hint" id="push-hint">${statusText}</div>
+          </div>
+          <button type="button" class="toggle-btn ${active ? "is-on" : "is-off"}" id="push-toggle" ${!supported || Notification.permission === "denied" ? "disabled" : ""}>
+            ${active ? "Désactiver" : "Activer"}
+          </button>
+        </div>
+        ${
+          isIos() && !isStandalone()
+            ? `<p class="muted" style="margin:12px 0 0;font-size:0.85rem">Sur iPhone, installe l’app (Partager → écran d’accueil) pour que les notifs fonctionnent.</p>`
+            : ""
+        }
+        <div class="close-row">
+          <button type="button" class="secondary" id="settings-close">Fermer</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const close = () => {
+    host.innerHTML = "";
+  };
+
+  host.querySelector("#settings-close")?.addEventListener("click", close);
+  host.querySelector("#settings-sheet")?.addEventListener("click", (e) => {
+    if (e.target === host.querySelector("#settings-sheet")) close();
+  });
+
+  const toggle = host.querySelector<HTMLButtonElement>("#push-toggle");
+  const hint = host.querySelector<HTMLElement>("#push-hint");
+  if (!toggle || !hint || !supported) return;
+
+  toggle.addEventListener("click", async () => {
+    toggle.disabled = true;
+    const currentlyOn = await isPushActive();
+    try {
+      if (currentlyOn) {
+        await disablePush();
+        toggle.textContent = "Activer";
+        toggle.classList.remove("is-on");
+        toggle.classList.add("is-off");
+        hint.textContent = "Désactivées — pas de rappel push.";
+      } else {
+        await enablePush();
+        toggle.textContent = "Désactiver";
+        toggle.classList.remove("is-off");
+        toggle.classList.add("is-on");
+        hint.textContent = "Tu reçois les rappels repas.";
+      }
+      await refreshPushDot(root);
+    } catch (e) {
+      hint.textContent = e instanceof Error ? e.message : "Échec";
+    } finally {
+      toggle.disabled = Notification.permission === "denied";
+    }
+  });
+}
+
+async function enablePush(): Promise<void> {
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") {
+    throw new Error("Permission refusée.");
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const keyRes = await api<{ publicKey: string }>("/api/vapid-public-key");
+  if (!keyRes.ok) throw new Error(keyRes.error);
+
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyRes.data.publicKey),
+    });
+  }
+  const json = sub.toJSON();
+  const save = await api("/api/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      keys: json.keys,
+    }),
+  });
+  if (!save.ok) throw new Error(save.error);
+}
+
+async function disablePush(): Promise<void> {
+  const sub = await getPushSubscription();
+  if (!sub) return;
+  const endpoint = sub.endpoint;
+  try {
+    await sub.unsubscribe();
+  } catch {
+    /* continue server cleanup */
+  }
+  await api("/api/push/subscribe", {
+    method: "DELETE",
+    body: JSON.stringify({ endpoint }),
+  });
 }
 
 function openLightbox(root: HTMLElement, src: string): void {
   const box = root.querySelector<HTMLDivElement>("#lightbox")!;
   box.innerHTML = `<img src="${src}" alt="Photo repas" />`;
   box.classList.remove("hidden");
-}
-
-async function setupBanners(el: HTMLElement): Promise<void> {
-  const parts: string[] = [];
-
-  if (isIos() && !isStandalone()) {
-    parts.push(`
-      <div class="banner">
-        <strong>iPhone : ajoute l’app à l’écran d’accueil</strong>
-        Safari → Bouton Partager → « Sur l’écran d’accueil ».
-        Les notifications ne marchent qu’ensuite (iOS 16.4+).
-      </div>
-    `);
-  }
-
-  parts.push(`
-    <div class="banner" id="push-banner">
-      <strong>Notifications</strong>
-      Active les rappels pour les heures de repas.
-      <button type="button" id="enable-push">Activer les notifications</button>
-      <p class="muted" id="push-status" style="margin:8px 0 0"></p>
-    </div>
-  `);
-
-  el.innerHTML = parts.join("");
-
-  const btn = el.querySelector<HTMLButtonElement>("#enable-push");
-  const status = el.querySelector<HTMLParagraphElement>("#push-status");
-  if (!btn || !status) return;
-
-  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-    status.textContent = "Notifications web non supportées sur cet appareil.";
-    btn.disabled = true;
-    return;
-  }
-
-  if (Notification.permission === "granted") {
-    status.textContent = "Permission déjà accordée — tu peux ré-enregistrer l’abonnement.";
-  }
-
-  btn.addEventListener("click", async () => {
-    btn.disabled = true;
-    status.textContent = "Demande en cours…";
-    try {
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") {
-        status.textContent = "Permission refusée.";
-        btn.disabled = false;
-        return;
-      }
-      const reg = await navigator.serviceWorker.ready;
-      const keyRes = await api<{ publicKey: string }>("/api/vapid-public-key");
-      if (!keyRes.ok) throw new Error(keyRes.error);
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(keyRes.data.publicKey),
-      });
-      const json = sub.toJSON();
-      const save = await api("/api/push/subscribe", {
-        method: "POST",
-        body: JSON.stringify({
-          endpoint: json.endpoint,
-          keys: json.keys,
-        }),
-      });
-      if (!save.ok) throw new Error(save.error);
-      status.textContent = "Notifications activées ✓";
-    } catch (e) {
-      status.textContent = e instanceof Error ? e.message : "Échec activation";
-      btn.disabled = false;
-    }
-  });
 }
 
 async function loadToday(root: HTMLElement): Promise<void> {
