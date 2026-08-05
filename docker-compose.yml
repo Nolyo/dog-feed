@@ -1,8 +1,10 @@
 services:
   dog-feed:
     build: .
-    ports:
-      - "3000:3000"
+    # Pas de ports: host — sur Dokploy, Traefik route via le domaine.
+    # En local : docker compose run -p 3005:3000 ou ajoute temporairement ports.
+    expose:
+      - "3000"
     environment:
       PIN: ${PIN:-4242}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-long-random-secret}
@@ -17,8 +19,8 @@ services:
       DATA_DIR: /data
       PORT: 3000
       NODE_ENV: production
-      # Mets true derrière HTTPS (DockPloy / Traefik)
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # true derrière HTTPS (Dokploy / Traefik)
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     volumes:
       - dog-feed-data:/data
     restart: unless-stopped
