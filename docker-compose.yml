@@ -1,0 +1,27 @@
+services:
+  dog-feed:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      PIN: ${PIN:-4242}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-long-random-secret}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@localhost}
+      TZ: Europe/Paris
+      FEED_MORNING_HOUR: ${FEED_MORNING_HOUR:-9}
+      FEED_EVENING_HOUR: ${FEED_EVENING_HOUR:-20}
+      MISS_GRACE_HOURS: ${MISS_GRACE_HOURS:-2}
+      DATA_DIR: /data
+      PORT: 3000
+      NODE_ENV: production
+      # Mets true derrière HTTPS (DockPloy / Traefik)
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - dog-feed-data:/data
+    restart: unless-stopped
+
+volumes:
+  dog-feed-data:

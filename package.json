@@ -1,0 +1,32 @@
+{
+  "name": "dog-feed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "dev:web": "vite --config src/web/vite.config.ts",
+    "build": "node scripts/generate-icons.mjs && npm run build:web && npm run build:server",
+    "build:web": "vite build --config src/web/vite.config.ts",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "node dist/server/index.js",
+    "generate-vapid": "tsx scripts/generate-vapid.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "better-sqlite3": "^11.9.1",
+    "hono": "^4.7.7",
+    "node-cron": "^3.0.3",
+    "sharp": "^0.34.1",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.14.1",
+    "@types/node-cron": "^3.0.11",
+    "@types/web-push": "^3.6.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.6"
+  }
+}
